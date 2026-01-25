@@ -20,6 +20,7 @@
       },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
+      "permissions": ["SCHEDULE_EXACT_ALARM", "NOTIFICATIONS"],
       "package": "com.anonymous.myapp"
     },
     "web": {
@@ -27,6 +28,15 @@
       "favicon": "./assets/images/favicon.png"
     },
     "plugins": [
+      "expo-router",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/images/icon.png",
+          "color": "#ffffff",
+          "permissions": ["SCHEDULE_EXACT_ALARM"]
+        }
+      ],
       "expo-router",
       [
         "expo-splash-screen",
