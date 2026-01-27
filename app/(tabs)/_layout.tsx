@@ -1,0 +1,62 @@
+import { CustomTabBar } from "@/components/TabBar";
+import MaskedView from "@react-native-masked-view/masked-view";
+import { BlurView } from "expo-blur";
+import { LinearGradient } from "expo-linear-gradient";
+import { TabList, Tabs, TabSlot, TabTrigger } from "expo-router/ui";
+import { ImageBackground, StyleSheet, View } from "react-native";
+
+export default function RootLayout() {
+  return (
+    <View style={{ flex: 1 }}>
+      <ImageBackground
+        source={{
+          uri: "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe",
+        }}
+        style={StyleSheet.absoluteFill}
+        blurRadius={18}
+      />
+
+      <Tabs>
+        <TabSlot />
+
+        {/* Bottom edge blur mask for the Tab Bar area */}
+        <View style={styles.bottomEdgeContainer} pointerEvents="none">
+          <MaskedView
+            style={StyleSheet.absoluteFill}
+            maskElement={
+              <LinearGradient
+                colors={["transparent", "black"]}
+                style={StyleSheet.absoluteFill}
+              />
+            }
+          >
+            <BlurView
+              intensity={100}
+              tint="light"
+              style={StyleSheet.absoluteFill}
+            />
+          </MaskedView>
+        </View>
+
+        <TabList style={{ display: "none" }}>
+          <TabTrigger name="index" href="/" />
+          <TabTrigger name="leave" href="/leave" />
+          <TabTrigger name="calendar" href="/calendar" />
+          <TabTrigger name="reminder" href="/reminder" />
+        </TabList>
+        <CustomTabBar />
+      </Tabs>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  bottomEdgeContainer: {
+    position: "absolute",
+    bottom: 0,
+    left: 0,
+    right: 0,
+    height: 120,
+    zIndex: 1,
+  },
+});
