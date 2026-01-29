@@ -1,179 +1,377 @@
 import { GlassCard } from "@/components/GlassCard";
 import { Ionicons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { Stack, useFocusEffect } from "expo-router";
-import React, { useCallback, useState } from "react"; // Added useCallback
+import * as Notifications from "expo-notifications";
+import { useFocusEffect, useRouter } from "expo-router";
+import React, { useCallback, useState } from "react";
 import {
   ActivityIndicator,
   FlatList,
-  ImageBackground,
-  Pressable,
   StyleSheet,
   Text,
+  TouchableOpacity,
   View,
 } from "react-native";
 
 interface ReminderItem {
   holidayId: string;
-  notificationId: string;
   body: string;
+  type: "reminder";
+  scheduledTime: string;
 }
 
+interface NoteItem {
+  holidayId: string;
+  items: string[];
+  type: "note";
+}
+
+type ListItem = ReminderItem | NoteItem;
+
 export default function ReminderListScreen() {
+  const router = useRouter();
+  const [activeTab, setActiveTab] = useState<"reminders" | "notes">(
+    "reminders",
+  );
   const [reminders, setReminders] = useState<ReminderItem[]>([]);
+  const [notes, setNotes] = useState<NoteItem[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const fetchReminders = async () => {
+  const fetchData = async () => {
     try {
       setLoading(true);
       const keys = await AsyncStorage.getAllKeys();
-      console.log("[List Debug] All keys in storage:", keys);
 
-      // Strict filter: must start with @reminder_ and NOT be a body key
+      // 1. Fetch Reminders
       const reminderKeys = keys.filter(
-        (key) => key.startsWith("@reminder_") && !key.includes("_body"),
+        (k) =>
+          k.startsWith("@reminder_") &&
+          !k.includes("_body") &&
+          !k.includes("_time"),
       );
-
-      console.log("[List Debug] Filtered Reminder Keys:", reminderKeys);
-
       const reminderData: ReminderItem[] = await Promise.all(
         reminderKeys.map(async (key) => {
           const holidayId = key.replace("@reminder_", "");
-          const notificationId = await AsyncStorage.getItem(key);
           const body = await AsyncStorage.getItem(
             `@reminder_body_${holidayId}`,
           );
-
-          console.log(
-            `[List Debug] Item: ${holidayId} | ID: ${notificationId} | Body: ${body}`,
+          const time = await AsyncStorage.getItem(
+            `@reminder_time_${holidayId}`,
           );
-
           return {
             holidayId,
-            notificationId: notificationId || "",
-            body: body || "No message set",
+            body: body || "Check your plans!",
+            type: "reminder",
+            scheduledTime: time || "Scheduled",
+          };
+        }),
+      );
+
+      // 2. Fetch Notes
+      const noteKeys = keys.filter((k) => k.startsWith("@note_"));
+      const noteData: NoteItem[] = await Promise.all(
+        noteKeys.map(async (key) => {
+          const holidayId = key.replace("@note_", "");
+          const savedNotes = await AsyncStorage.getItem(key);
+          return {
+            holidayId,
+            items: savedNotes ? JSON.parse(savedNotes) : [],
+            type: "note",
           };
         }),
       );
 
       setReminders(reminderData);
+      setNotes(noteData.filter((n) => n.items.length > 0));
     } catch (e) {
-      console.error("[List Error]", e);
+      console.error(e);
     } finally {
       setLoading(false);
     }
   };
 
-  // REPLACED useEffect with useFocusEffect
-  // This ensures that every time you navigate TO this screen, it re-fetches.
   useFocusEffect(
     useCallback(() => {
-      fetchReminders();
+      fetchData();
     }, []),
   );
-  const deleteSingleReminder = async (holidayId: string) => {
-    await AsyncStorage.removeItem(`@reminder_${holidayId}`);
-    await AsyncStorage.removeItem(`@reminder_body_${holidayId}`);
-    fetchReminders(); // Refresh list
+
+  const deleteItem = async (holidayId: string, type: "reminder" | "note") => {
+    if (type === "reminder") {
+      const id = await AsyncStorage.getItem(`@reminder_${holidayId}`);
+      if (id) await Notifications.cancelScheduledNotificationAsync(id);
+      await AsyncStorage.multiRemove([
+        `@reminder_${holidayId}`,
+        `@reminder_body_${holidayId}`,
+        `@reminder_time_${holidayId}`,
+      ]);
+    } else {
+      await AsyncStorage.removeItem(`@note_${holidayId}`);
+    }
+    fetchData();
   };
 
-  const renderReminder = ({ item }: { item: ReminderItem }) => (
-    <GlassCard style={styles.card}>
-      <View style={styles.info}>
-        <Text style={styles.holidayTitle}>
-          {item.holidayId.replace(/-/g, " ")}
-        </Text>
-        <Text style={styles.bodyText} numberOfLines={2}>
-          {item.body}
-        </Text>
-      </View>
-      <View style={styles.actions}>
-        <Pressable
-          onPress={() => deleteSingleReminder(item.holidayId)}
-          style={styles.deleteBtn}
+  const formatDate = (id: string) => {
+    const parts = id.split("-");
+    if (parts.length < 3) return "Holiday";
+    const date = new Date(
+      parseInt(parts[0]),
+      parseInt(parts[1]) - 1,
+      parseInt(parts[2]),
+    );
+    return date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  };
+
+  const renderItem = ({ item }: { item: ListItem }) => {
+    const isNote = item.type === "note";
+    const displayDate = formatDate(item.holidayId);
+
+    return (
+      <View style={styles.cardWrapper}>
+        <GlassCard
+          onPress={() =>
+            router.push({
+              pathname: "/details/[id]",
+              params: { id: item.holidayId },
+            })
+          }
+          hero={false}
+          style={styles.card}
         >
-          <Ionicons name="trash-outline" size={20} color="#FF3B30" />
-        </Pressable>
+          <View style={styles.cardContent}>
+            {/* LEFT: Date Badge */}
+            <View style={styles.dateBadge}>
+              <Text style={styles.dateText}>{displayDate.split(" ")[0]}</Text>
+              <Text style={styles.dayText}>{displayDate.split(" ")[1]}</Text>
+            </View>
+
+            {/* MIDDLE: Information */}
+            <View style={styles.info}>
+              <Text style={styles.holidayTitle} numberOfLines={1}>
+                {item.holidayId
+                  .replace(/^\d{4}-\d{2}-\d{2}-/, "")
+                  .replace(/-/g, " ")}
+              </Text>
+
+              {isNote ? (
+                <View>
+                  <Text style={styles.previewText} numberOfLines={1}>
+                    {(item as NoteItem).items[0]}
+                  </Text>
+                  <View style={styles.noteBadge}>
+                    <Ionicons name="document-text" size={12} color="#5856D6" />
+                    <Text style={styles.badgeText}>
+                      {(item as NoteItem).items.length} items
+                    </Text>
+                  </View>
+                </View>
+              ) : (
+                <View>
+                  <Text style={styles.previewText} numberOfLines={1}>
+                    {(item as ReminderItem).body}
+                  </Text>
+                  <View style={styles.timeTag}>
+                    <Ionicons name="alarm" size={12} color="#FF9500" />
+                    <Text style={styles.timeText}>
+                      {(item as ReminderItem).scheduledTime}
+                    </Text>
+                  </View>
+                </View>
+              )}
+            </View>
+
+            {/* RIGHT: Delete Action */}
+            <TouchableOpacity
+              onPress={() =>
+                deleteItem(item.holidayId, isNote ? "note" : "reminder")
+              }
+              style={styles.deleteBtn}
+            >
+              <View style={styles.deleteIconBg}>
+                <Ionicons name="trash" size={18} color="#FF3B30" />
+              </View>
+            </TouchableOpacity>
+          </View>
+        </GlassCard>
       </View>
-    </GlassCard>
-  );
+    );
+  };
 
   return (
     <View style={styles.container}>
-      <Stack.Screen
-        options={{ headerTitle: "All Reminders", headerTransparent: true }}
-      />
+      <View style={styles.contentWrapper}>
+        <Text style={styles.screenTitle}>My Plans</Text>
 
-      {/* Background to match your details layout */}
-      <ImageBackground
-        source={{
-          uri: "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe",
-        }}
-        style={StyleSheet.absoluteFillObject}
-        blurRadius={18}
-      />
+        <View style={styles.toggleContainer}>
+          <TouchableOpacity
+            style={[styles.tab, activeTab === "reminders" && styles.activeTab]}
+            onPress={() => setActiveTab("reminders")}
+          >
+            <Text
+              style={[
+                styles.tabText,
+                activeTab === "reminders" && styles.activeTabText,
+              ]}
+            >
+              Reminders
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.tab, activeTab === "notes" && styles.activeTab]}
+            onPress={() => setActiveTab("notes")}
+          >
+            <Text
+              style={[
+                styles.tabText,
+                activeTab === "notes" && styles.activeTabText,
+              ]}
+            >
+              Notes
+            </Text>
+          </TouchableOpacity>
+        </View>
 
-      {loading ? (
-        <ActivityIndicator size="large" color="#007AFF" style={{ flex: 1 }} />
-      ) : (
-        <FlatList
-          data={reminders}
-          keyExtractor={(item) => item.holidayId}
-          renderItem={renderReminder}
-          contentContainerStyle={styles.listContent}
-          ListEmptyComponent={
-            <View style={styles.emptyContainer}>
-              <Ionicons
-                name="notifications-off-outline"
-                size={48}
-                color="#8E8E93"
-              />
-              <Text style={styles.emptyText}>No reminders scheduled yet.</Text>
-            </View>
-          }
-        />
-      )}
+        {loading ? (
+          <ActivityIndicator
+            size="large"
+            color="#007AFF"
+            style={{ marginTop: 50 }}
+          />
+        ) : (
+          <FlatList
+            data={activeTab === "reminders" ? reminders : notes}
+            keyExtractor={(item) => `${item.type}_${item.holidayId}`}
+            renderItem={renderItem}
+            contentContainerStyle={styles.list}
+            showsVerticalScrollIndicator={false}
+            ListEmptyComponent={
+              <Text style={styles.emptyText}>Nothing scheduled yet</Text>
+            }
+          />
+        )}
+      </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1 },
-  listContent: { padding: 20, paddingTop: 110 },
   card: {
-    flexDirection: "row",
     padding: 16,
+    borderRadius: 24,
+  },
+  container: { flex: 1 },
+  contentWrapper: { flex: 1, paddingTop: 80 },
+  screenTitle: {
+    fontSize: 32,
+    fontWeight: "900",
+    color: "#1C1C1E",
+    paddingHorizontal: 25,
+    marginBottom: 20,
+  },
+
+  // GLASSY TAB TOGGLE
+  toggleContainer: {
+    flexDirection: "row",
+    marginHorizontal: 25,
+    marginBottom: 25,
     borderRadius: 20,
-    marginBottom: 12,
-    alignItems: "center",
-    backgroundColor: "rgba(255, 255, 255, 0.7)",
+    padding: 4,
+    backgroundColor: "rgba(255, 255, 255, 0.3)",
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.2)",
   },
-  info: { flex: 1 },
-  holidayTitle: {
-    fontSize: 16,
+  tab: { flex: 1, paddingVertical: 10, alignItems: "center", borderRadius: 16 },
+  activeTab: {
+    backgroundColor: "#e8e4e4",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+  },
+  tabText: { fontWeight: "700", color: "rgba(0,0,0,0.4)", fontSize: 15 },
+  activeTabText: { color: "#000" },
+
+  // LIST & CARD
+  list: { paddingHorizontal: 20, paddingBottom: 100 },
+  cardWrapper: { marginBottom: 16 },
+  cardContent: {
+    flexDirection: "row",
+    alignItems: "center",
+    padding: 8, // Let GlassCard handle the outer padding
+  },
+
+  // DATE BADGE
+  dateBadge: {
+    width: 60,
+    height: 60,
+    backgroundColor: "#007AFF",
+    borderRadius: 18,
+    justifyContent: "center",
+    alignItems: "center",
+    shadowColor: "#007AFF",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+  },
+  dateText: {
+    color: "#FFF",
+    fontSize: 10,
     fontWeight: "800",
-    color: "#1A1A1B",
+    opacity: 0.8,
+    textTransform: "uppercase",
+  },
+  dayText: { color: "#FFF", fontSize: 22, fontWeight: "900", marginTop: -2 },
+
+  // INFO SECTION
+  info: { flex: 1, marginLeft: 16, justifyContent: "center" },
+  holidayTitle: {
+    fontSize: 18,
+    fontWeight: "800",
+    color: "#1C1C1E",
     textTransform: "capitalize",
-    marginBottom: 4,
+    marginBottom: 2,
   },
-  bodyText: {
-    fontSize: 14,
-    color: "#4A4A4A",
+  previewText: { fontSize: 14, color: "#3A3A3C", opacity: 0.7 },
+
+  // SUB-DETAILS
+  timeTag: { flexDirection: "row", alignItems: "center", marginTop: 4 },
+  timeText: {
+    fontSize: 13,
+    color: "#FF9500",
+    fontWeight: "700",
+    marginLeft: 4,
   },
-  actions: { marginLeft: 12 },
-  deleteBtn: {
-    padding: 8,
-    backgroundColor: "rgba(255, 59, 48, 0.1)",
-    borderRadius: 12,
-  },
-  emptyContainer: {
+
+  noteBadge: {
+    flexDirection: "row",
     alignItems: "center",
-    marginTop: 100,
+    backgroundColor: "rgba(88, 86, 214, 0.1)",
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+    alignSelf: "flex-start",
+    marginTop: 4,
+  },
+  badgeText: {
+    fontSize: 12,
+    color: "#5856D6",
+    fontWeight: "700",
+    marginLeft: 4,
+  },
+
+  // DELETE BUTTON
+  deleteBtn: { padding: 10 },
+  deleteIconBg: {
+    width: 36,
+    height: 36,
+    backgroundColor: "rgba(255, 59, 48, 0.1)",
+    borderRadius: 18,
+    justifyContent: "center",
+    alignItems: "center",
   },
   emptyText: {
-    marginTop: 12,
-    fontSize: 16,
+    textAlign: "center",
+    marginTop: 100,
     color: "#8E8E93",
-    fontWeight: "600",
+    fontSize: 16,
+    fontWeight: "500",
   },
 });

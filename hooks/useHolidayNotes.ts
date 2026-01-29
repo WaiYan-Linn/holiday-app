@@ -21,7 +21,7 @@ export const useHolidayNotes = (holidayId: string) => {
           setNotes([]);
         }
       } catch (e) {
-        console.error("Failed to load notes", e);
+        setNotes([]);
       } finally {
         setIsLoading(false);
       }

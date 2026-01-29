@@ -2,35 +2,94 @@ import holidayData from "@/assets/holidays.json";
 import { GlassCard } from "@/components/GlassCard";
 import { useRouter } from "expo-router";
 import React, { useMemo } from "react";
-import { Dimensions, FlatList, StyleSheet, Text, View } from "react-native";
+import { Dimensions, SectionList, StyleSheet, Text, View } from "react-native";
 
 const { width } = Dimensions.get("window");
 
+// Types remain the same as your original code
+interface Holiday {
+  name: string;
+  description: string;
+  date: { iso: string };
+  type: string[];
+  urlid: string;
+}
+
+interface HolidaySection {
+  title: string;
+  monthYear: string;
+  data: Holiday[];
+  holidayCount: number;
+}
+
 export default function HolidayList() {
-  const upcomingHolidays = useMemo(() => {
+  const router = useRouter();
+
+  const holidaySections = useMemo(() => {
     const today = new Date();
-    // Filter and sort by date
-    return holidayData.response.holidays
+    const upcoming = holidayData.response.holidays
       .filter((h) => new Date(h.date.iso) >= today)
       .sort(
         (a, b) =>
           new Date(a.date.iso).getTime() - new Date(b.date.iso).getTime(),
       );
+
+    const grouped: { [key: string]: Holiday[] } = {};
+    upcoming.forEach((holiday) => {
+      const date = new Date(holiday.date.iso);
+      const monthYear = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+      if (!grouped[monthYear]) grouped[monthYear] = [];
+      grouped[monthYear].push(holiday);
+    });
+
+    return Object.keys(grouped)
+      .sort()
+      .map((key) => {
+        const [year, month] = key.split("-");
+        const date = new Date(parseInt(year), parseInt(month) - 1);
+        return {
+          title: date.toLocaleString("en-US", { month: "long" }),
+          monthYear: year,
+          data: grouped[key],
+          holidayCount: grouped[key].length,
+        };
+      });
   }, []);
 
-  const router = useRouter();
+  const renderSectionHeader = ({ section }: { section: HolidaySection }) => (
+    <View style={styles.sectionHeaderContainer}>
+      <View style={styles.headerContent}>
+        <View>
+          <Text style={styles.sectionMonth}>{section.title}</Text>
+          <View style={styles.yearBadge}>
+            <Text style={styles.sectionYear}>{section.monthYear}</Text>
+          </View>
+        </View>
+        <View style={styles.countBadge}>
+          <Text style={styles.countText}>{section.holidayCount} Events</Text>
+        </View>
+      </View>
+    </View>
+  );
 
-  const renderItem = ({ item, index }: { item: any; index: number }) => {
-    const isHero = index === 0;
+  const renderItem = ({
+    item,
+    section,
+    index,
+  }: {
+    item: Holiday;
+    section: HolidaySection;
+    index: number;
+  }) => {
+    const isHero = section === holidaySections[0] && index === 0;
+    const dateObj = new Date(item.date.iso);
+
     const handlePress = () => {
-      // We encode the urlid because it contains a "/"
-      const encodedId = encodeURIComponent(item.urlid);
-      console.log("Navigating to details for ID:", encodedId);
       router.push({
         pathname: "/details/[id]",
         params: {
-          id: encodedId,
-          name: item.name, // You can pass extra data as params to avoid re-fetching
+          id: encodeURIComponent(item.urlid),
+          name: item.name,
           desc: item.description,
         },
       });
@@ -40,50 +99,54 @@ export default function HolidayList() {
       <GlassCard
         style={[styles.card, isHero && styles.heroCard]}
         isInteractive={true}
-        hero={isHero} // NEW
         onPress={handlePress}
       >
-        {isHero && (
-          <View style={styles.nextBadge}>
-            <Text style={styles.badgeText}>UPCOMING NEXT</Text>
-          </View>
-        )}
-
-        <View style={styles.row}>
-          <View style={styles.dateBox}>
-            <Text style={styles.day}>{new Date(item.date.iso).getDate()}</Text>
-            <Text style={styles.month}>
-              {new Date(item.date.iso)
+        <View style={styles.cardLayout}>
+          <View style={[styles.datePill, isHero && styles.heroDatePill]}>
+            <Text style={[styles.dayText, isHero && styles.heroDayText]}>
+              {dateObj.getDate()}
+            </Text>
+            <Text style={[styles.monthText, isHero && styles.heroMonthText]}>
+              {dateObj
                 .toLocaleString("en-US", { month: "short" })
                 .toUpperCase()}
             </Text>
           </View>
 
-          <View style={styles.contentBox}>
-            <Text style={[styles.name, isHero && styles.heroName]}>
+          <View style={styles.infoContent}>
+            {isHero && (
+              <Text style={styles.upNextLabel}>UPCOMING CELEBRATION</Text>
+            )}
+            <Text
+              style={[styles.holidayName, isHero && styles.heroName]}
+              numberOfLines={2}
+            >
               {item.name}
             </Text>
-            <Text style={styles.type}>{item.type[0]}</Text>
+            <Text style={[styles.typeText, isHero && styles.heroTypeText]}>
+              {item.type[0]}
+            </Text>
           </View>
         </View>
 
-        {isHero && (
-          <Text style={styles.desc} numberOfLines={3}>
-            {item.description ||
-              "Prepare for the festivities! This is a national public holiday in Myanmar."}
+        {/* {isHero && item.description && (
+          <Text style={styles.heroDesc} numberOfLines={3}>
+            {item.description}
           </Text>
-        )}
+        )} */}
       </GlassCard>
     );
   };
 
   return (
-    <FlatList
-      data={upcomingHolidays}
-      keyExtractor={(item) => item.urlid + item.date.iso}
+    <SectionList
+      sections={holidaySections}
+      keyExtractor={(item, index) => item.urlid + index}
+      renderItem={renderItem}
+      renderSectionHeader={renderSectionHeader}
+      stickySectionHeadersEnabled={false}
       contentContainerStyle={styles.listContainer}
       showsVerticalScrollIndicator={false}
-      renderItem={renderItem}
     />
   );
 }
@@ -91,8 +154,53 @@ export default function HolidayList() {
 const styles = StyleSheet.create({
   listContainer: {
     paddingHorizontal: 20,
-    paddingTop: 120, // Starts below the status bar mask
-    paddingBottom: 160, // Ends above the tab bar mask
+    // Adjusting for your MaskedView locations [0.05, 0.15, 0.82, 0.91]
+    paddingTop: 100,
+    paddingBottom: 150,
+  },
+  sectionHeaderContainer: {
+    marginTop: 40,
+    marginBottom: 20,
+  },
+  headerContent: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  sectionMonth: {
+    fontSize: 42,
+    fontWeight: "900",
+    color: "#FFFFFF", // High contrast for the background
+    letterSpacing: -1,
+    textShadowColor: "rgba(0, 0, 0, 0.2)",
+    textShadowOffset: { width: 0, height: 2 },
+    textShadowRadius: 4,
+  },
+  yearBadge: {
+    backgroundColor: "rgb(48, 100, 255)", // Bright pop of color
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 6,
+    alignSelf: "flex-start",
+    marginTop: -4,
+  },
+  sectionYear: {
+    fontSize: 12,
+    fontWeight: "800",
+    color: "#FFF",
+  },
+  countBadge: {
+    backgroundColor: "rgba(255, 255, 255, 0.25)",
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.3)",
+  },
+  countText: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: "#FFF",
   },
   card: {
     marginBottom: 16,
@@ -100,67 +208,71 @@ const styles = StyleSheet.create({
     borderRadius: 24,
   },
   heroCard: {
-    backgroundColor: "rgba(255, 255, 255, 0.4)", // Brighter for the hero item
     borderWidth: 1.5,
-    borderColor: "#007AFF",
   },
-  nextBadge: {
-    backgroundColor: "#007AFF",
-    alignSelf: "flex-start",
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 8,
-    marginBottom: 12,
-  },
-  badgeText: {
-    color: "#FFF",
-    fontSize: 10,
-    fontWeight: "900",
-    letterSpacing: 1,
-  },
-  row: {
+  cardLayout: {
     flexDirection: "row",
     alignItems: "center",
   },
-  dateBox: {
-    alignItems: "center",
+  datePill: {
+    width: 60,
+    height: 70,
+    backgroundColor: "#FFF",
+    borderRadius: 20,
     justifyContent: "center",
-    paddingRight: 15,
-    borderRightWidth: 1,
-    borderRightColor: "rgba(0,0,0,0.05)",
+    alignItems: "center",
+    shadowColor: "#000",
+    shadowOpacity: 0.05,
+    shadowRadius: 5,
   },
-  day: {
-    fontSize: 28,
-    fontWeight: "800",
-    color: "#1A1A1B",
+  heroDatePill: {
+    backgroundColor: "#007AFF",
   },
-  month: {
-    fontSize: 12,
-    fontWeight: "600",
-    color: "#007AFF",
+  dayText: {
+    fontSize: 24,
+    fontWeight: "900",
+    color: "#1c1c1e",
   },
-  contentBox: {
-    paddingLeft: 15,
-    flex: 1,
-  },
-  name: {
-    fontSize: 16,
+  heroDayText: { color: "#FFF" },
+  monthText: {
+    fontSize: 11,
     fontWeight: "700",
-    color: "#1A1A1B",
+    color: "#8e8e93",
+  },
+  heroMonthText: { color: "rgba(255,255,255,0.8)" },
+  infoContent: {
+    flex: 1,
+    paddingLeft: 20,
+  },
+  upNextLabel: {
+    fontSize: 11,
+    fontWeight: "800",
+    color: "#007AFF",
+    letterSpacing: 1.5,
+    marginBottom: 4,
+  },
+  holidayName: {
+    fontSize: 18,
+    fontWeight: "700",
+    color: "#1c1c1e",
   },
   heroName: {
-    fontSize: 22,
+    fontSize: 24,
+    color: "#000",
   },
-  type: {
-    fontSize: 12,
-    color: "#666",
-    marginTop: 2,
+  typeText: {
+    fontSize: 13,
+    color: "#636366",
+    marginTop: 4,
   },
-  desc: {
+  heroTypeText: {
+    color: "#636366",
+    fontWeight: "600",
+  },
+  heroDesc: {
     marginTop: 15,
-    fontSize: 14,
-    color: "#444",
-    lineHeight: 20,
-    fontStyle: "italic",
+    fontSize: 15,
+    color: "#3a3a3c",
+    lineHeight: 22,
   },
 });

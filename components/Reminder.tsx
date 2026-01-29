@@ -1,16 +1,16 @@
 import { Ionicons } from "@expo/vector-icons";
 import DateTimePicker, {
-    DateTimePickerEvent,
+  DateTimePickerEvent,
 } from "@react-native-community/datetimepicker";
 import React from "react";
 import {
-    Platform,
-    Pressable,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TextInput,
-    View,
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
 } from "react-native";
 import { GlassCard } from "./GlassCard";
 
@@ -41,6 +41,42 @@ export const ReminderSection = ({
 }: ReminderSectionProps) => {
   return (
     <View style={styles.container}>
+      {/* NOTIFICATION BODY SECTION */}
+      <Text style={styles.sectionLabel}>NOTIFICATION MESSAGE</Text>
+      <GlassCard style={styles.bodyCard}>
+        <TextInput
+          style={styles.bodyInput}
+          placeholder="What should the notification say?"
+          placeholderTextColor="#8E8E93"
+          multiline
+          value={reminderBody}
+          onChangeText={setReminderBody}
+        />
+
+        {notes.length > 0 && (
+          <View style={styles.suggestionsContainer}>
+            <Text style={styles.suggestionTitle}>Use a note as message:</Text>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.chipScroll}
+            >
+              {notes.map((note, index) => (
+                <Pressable
+                  key={index}
+                  onPress={() => setReminderBody(note)}
+                  style={styles.noteChip}
+                >
+                  <Text numberOfLines={1} style={styles.chipText}>
+                    {note}
+                  </Text>
+                </Pressable>
+              ))}
+            </ScrollView>
+          </View>
+        )}
+      </GlassCard>
+
       {/* TIME SELECTION */}
       <Text style={styles.sectionLabel}>TIME SETTINGS</Text>
       <GlassCard style={styles.reminderCard}>
@@ -79,42 +115,6 @@ export const ReminderSection = ({
               onTimeChange(e, d);
             }}
           />
-        )}
-      </GlassCard>
-
-      {/* NOTIFICATION BODY SECTION */}
-      <Text style={styles.sectionLabel}>NOTIFICATION MESSAGE</Text>
-      <GlassCard style={styles.bodyCard}>
-        <TextInput
-          style={styles.bodyInput}
-          placeholder="What should the notification say?"
-          placeholderTextColor="#8E8E93"
-          multiline
-          value={reminderBody}
-          onChangeText={setReminderBody}
-        />
-
-        {notes.length > 0 && (
-          <View style={styles.suggestionsContainer}>
-            <Text style={styles.suggestionTitle}>Use a note as message:</Text>
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.chipScroll}
-            >
-              {notes.map((note, index) => (
-                <Pressable
-                  key={index}
-                  onPress={() => setReminderBody(note)}
-                  style={styles.noteChip}
-                >
-                  <Text numberOfLines={1} style={styles.chipText}>
-                    {note}
-                  </Text>
-                </Pressable>
-              ))}
-            </ScrollView>
-          </View>
         )}
       </GlassCard>
 
